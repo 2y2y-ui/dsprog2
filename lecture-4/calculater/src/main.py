@@ -1,4 +1,4 @@
-#元々の四則演算機能に加え、より高度な計算を行えるようにするため、UIを拡張し、新たに5つの科学計算機能（平方根、2乗、sin、cos、tan）を追加しました。
+#元々の四則演算機能に加え、より高度な計算を行えるようにするため、UIを拡張し、新たに5つの科学計算機能（平方根、2乗、sin、cos、tan）を追加しました。さらに、log（常用対数）、階乗、逆数の計算機能も実装しました。
 #実装にあたっては、まず既存のUIレイアウトに新しい行を追加し、科学計算専用のボタンを配置しました。これらのボタンは、他のボタンと視覚的に区別がつくように専用のクラス（ScientificButton）を定義し、独自のスタイルを適用しています。
 #計算ロジックについては、Pythonの標準mathモジュールを活用し、各ボタンに対応する数学関数を呼び出す形で実装しました。特に、三角関数（sin, cos, tan）については、一般的な電卓の挙動に合わせ、ユーザーが入力した数値を度数（Degree）として扱えるよう、内部でラジアンに変換する処理を加えています。
 #参考文献はこちらです。
@@ -43,8 +43,6 @@ class ExtraActionButton(CalcButton):
         self.bgcolor = ft.Colors.BLUE_GREY_100
         self.color = ft.Colors.BLACK
 
-# --- ここから追加したコード ---
-
 class ScientificButton(CalcButton):
     # 科学計算ボタン用の新しいクラスを定義する。
     def __init__(self, text, button_clicked):
@@ -52,8 +50,6 @@ class ScientificButton(CalcButton):
         # ボタンの背景色と文字色を定義する。
         self.bgcolor = ft.Colors.INDIGO_400
         self.color = ft.Colors.WHITE
-
-# --- ここまで追加したコード ---
 
 
 class CalculatorApp(ft.Container):
@@ -69,7 +65,6 @@ class CalculatorApp(ft.Container):
         self.content = ft.Column(
             controls=[
                 ft.Row(controls=[self.result], alignment="end"),
-                # --- ここから追加したコード ---
                 # 科学計算ボタンを配置する新しい行を追加する。
                 ft.Row(
                     controls=[
@@ -80,7 +75,14 @@ class CalculatorApp(ft.Container):
                         ScientificButton(text="tan", button_clicked=self.button_clicked),
                     ]
                 ),
-                # --- ここまで追加したコード ---
+                ft.Row(
+                    controls=[
+                        ScientificButton(text="tan", button_clicked=self.button_clicked),
+                        ScientificButton(text="log", button_clicked=self.button_clicked),
+                        ScientificButton(text="!", button_clicked=self.button_clicked),
+                        ScientificButton(text="1/x", button_clicked=self.button_clicked),
+                    ]
+                ),
                 ft.Row(
                     controls=[
                         ExtraActionButton(text="AC", button_clicked=self.button_clicked),
@@ -151,9 +153,8 @@ class CalculatorApp(ft.Container):
             self.result.value = self.calculate(self.operand1, float(self.result.value), self.operator)
             self.reset()
         
-        # --- ここから追加したコード ---
         # 科学計算ボタンが押された場合の処理を記述する。
-        elif data in ("√", "x²", "sin", "cos", "tan"):
+        elif data in ("√", "x²", "sin", "cos", "tan", "log", "!", "1/x"):
             try:
                 # 現在の表示値を取得し、浮動小数点数に変換する。
                 current_value = float(self.result.value)
@@ -177,6 +178,27 @@ class CalculatorApp(ft.Container):
                     # 入力値を度数とみなし、ラジアンに変換してtanを計算する。
                     res = math.tan(math.radians(current_value))
                 
+                # --- ここから追加したもの ---
+                elif data == "log":
+                    # 常用対数(log10)を計算する。入力値が0以下の場合はエラーとする。
+                    if current_value <= 0:
+                        res = "Error"
+                    else:
+                        res = math.log10(current_value)
+                elif data == "!":
+                    # 階乗を計算する。入力値が整数でない、または負の場合はエラーとする。
+                    if current_value < 0 or current_value != int(current_value):
+                        res = "Error"
+                    else:
+                        res = math.factorial(int(current_value))
+                elif data == "1/x":
+                    # 逆数を計算する。入力値が0の場合はエラーとする。
+                    if current_value == 0:
+                        res = "Error"
+                    else:
+                        res = 1 / current_value
+                # --- ここまで追加したもの ---
+
                 # 計算結果がエラーでなければ、表示を更新する。
                 if res != "Error":
                     self.result.value = str(self.format_number(res))
