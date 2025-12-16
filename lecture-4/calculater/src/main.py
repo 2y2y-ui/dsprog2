@@ -2,6 +2,9 @@
 #実装にあたっては、まず既存のUIレイアウトに新しい行を追加し、科学計算専用のボタンを配置しました。これらのボタンは、他のボタンと視覚的に区別がつくように専用のクラス（ScientificButton）を定義し、独自のスタイルを適用しています。
 #計算ロジックについては、Pythonの標準mathモジュールを活用し、各ボタンに対応する数学関数を呼び出す形で実装しました。特に、三角関数（sin, cos, tan）については、一般的な電卓の挙動に合わせ、ユーザーが入力した数値を度数（Degree）として扱えるよう、内部でラジアンに変換する処理を加えています。
 #参考文献はこちらです。
+#Flet 公式サイトhttps://flet.dev/docs/
+#Flet 公式サンプルhttps://github.com/flet-dev/examples/tree/main/python/apps/calculator
+#Python ライブラリドキュメント (math モジュール) https://docs.python.org/3/library/math.html
 import flet as ft
 # 科学計算のためにmathモジュールをインポートする
 import math
