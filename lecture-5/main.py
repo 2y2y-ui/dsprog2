@@ -2,16 +2,25 @@ import flet as ft
 import requests
 
 # 天気の文字からアイコンを判定する補助関数（これはデザイン用の追加機能です）
+# 修正: 判定ロジックを強化し、誤判定を防ぐ
 def get_weather_icon(weather_text):
-    if "晴" in weather_text:
-        return ft.Icons.WB_SUNNY, ft.Colors.ORANGE
-    elif "雨" in weather_text:
-        return ft.Icons.UMBRELLA, ft.Colors.BLUE
-    # ひらがなの「くもり」も判定に追加
-    elif "曇" in weather_text or "くもり" in weather_text:
-        return ft.Icons.CLOUD, ft.Colors.GREY
-    elif "雪" in weather_text:
+    # 判定用に不要な文字（スペースなど）を削除してシンプルにする
+    text = weather_text.replace(" ", "").replace("　", "")
+    
+    # 特殊な天気の判定を先に行う
+    if "雷" in text:
+        return ft.Icons.FLASH_ON, ft.Colors.YELLOW_800
+    elif "雪" in text or "吹雪" in text: 
         return ft.Icons.AC_UNIT, ft.Colors.LIGHT_BLUE
+    
+    # 基本的な天気の判定
+    # ここでは分割された単語（例：「くもり」だけ）が渡されることを想定して判定する
+    if "晴" in text:
+        return ft.Icons.WB_SUNNY, ft.Colors.ORANGE
+    elif "雨" in text:
+        return ft.Icons.UMBRELLA, ft.Colors.BLUE
+    elif "曇" in text or "くもり" in text:
+        return ft.Icons.CLOUD, ft.Colors.GREY
     else:
         return ft.Icons.WB_CLOUDY_OUTLINED, ft.Colors.BLUE_GREY
 
@@ -160,30 +169,40 @@ def main(page: ft.Page):
                 date_str = time_defines[i][:10]
                 
                 # デザイン変更: 天気の変化（のち、から）を判定してビジュアルを変える
-                # 全角スペースなどを除去して判定しやすくする
-                weather_clean = weather.replace("　", " ")
+                # 全角スペースなどを除去して、判定用の文字列を作成する
+                # これにより「晴れ　のち　くもり」のようなスペース入りテキストも正しく処理できる
+                search_text = weather.replace("　", "").replace(" ", "")
                 
                 visual_content = None # ここに表示するアイコン等のパーツを入れる
                 
-                # 分割するためのキーワードを探す
-                split_keyword = None
-                if "のち" in weather_clean:
-                    split_keyword = "のち"
-                elif "から" in weather_clean:
-                    split_keyword = "から"
+                # --- ロジック分岐の準備 ---
                 
-                if split_keyword:
-                    # キーワードで分割して、2つのアイコンと矢印を表示する
-                    # 「晴れ 昼過ぎ から くもり」のような場合、「から」で区切れば
-                    # 前半に「晴れ」、後半に「くもり」が含まれるため正しく判定できる
-                    parts = weather_clean.split(split_keyword, 1)
+                # 1. 時間による変化（「のち」「から」）
+                time_split_keyword = None
+                if "のち" in search_text:
+                    time_split_keyword = "のち"
+                elif "から" in search_text:
+                    time_split_keyword = "から"
+                
+                # 2. 一時的な変化（「時々」「一時」）
+                occasional_split_keyword = None
+                if "時々" in search_text:
+                    occasional_split_keyword = "時々"
+                elif "一時" in search_text:
+                    occasional_split_keyword = "一時"
+
+                # --- アイコン作成ロジック ---
+
+                if time_split_keyword:
+                    # A. 時間変化がある場合 (矢印スタイル)
+                    # search_textを使って分割することで、正確に前後の天気を取得する
+                    parts = search_text.split(time_split_keyword, 1)
                     before_txt = parts[0]
                     after_txt = parts[1]
                     
                     icon1, col1 = get_weather_icon(before_txt)
                     icon2, col2 = get_weather_icon(after_txt)
                     
-                    # 変化を表すRowを作成 (アイコン -> 矢印 -> アイコン)
                     visual_content = ft.Row(
                         [
                             ft.Icon(icon1, size=35, color=col1),
@@ -192,10 +211,45 @@ def main(page: ft.Page):
                         ],
                         alignment=ft.MainAxisAlignment.START,
                     )
+                
+                elif occasional_split_keyword:
+                    # B. 「時々」や「一時」の場合 (スタックスタイル)
+                    # 以前のバグ修正: テキストを分割してからアイコンを判定する
+                    # これにより「くもり」がメインの場合に「晴れ」アイコンが出るのを防ぐ
+                    parts = search_text.split(occasional_split_keyword, 1)
+                    main_txt = parts[0] # メインの天気
+                    sub_txt = parts[1]  # サブの天気
+                    
+                    main_icon_data, main_col = get_weather_icon(main_txt)
+                    sub_icon_data, sub_col = get_weather_icon(sub_txt)
+                    
+                    # ft.Stackを使ってアイコンを重ねます
+                    visual_content = ft.Stack(
+                        controls=[
+                            # 下のレイヤー: メインの天気（大きく表示）
+                            ft.Container(
+                                content=ft.Icon(main_icon_data, size=50, color=main_col),
+                                padding=ft.padding.only(right=15, bottom=15) # 重なり調整
+                            ),
+                            # 上のレイヤー: サブの天気（右下に小さく表示）
+                            ft.Container(
+                                content=ft.Icon(sub_icon_data, size=28, color=sub_col),
+                                bgcolor=ft.Colors.WHITE, # 重なった時に見やすいよう背景を白く抜く
+                                border_radius=50, # 丸くする
+                                padding=2,
+                                alignment=ft.alignment.bottom_right, # 右下に配置
+                                right=0,
+                                bottom=0
+                            ),
+                        ],
+                        width=75, # Stack全体のサイズ確保
+                        height=65,
+                    )
+
                 else:
-                    # 通常の（変化がない、または単純な）天気の場合
-                    # デザイン変更: アイコンを取得
-                    icon_data, icon_color = get_weather_icon(weather)
+                    # C. 通常の（変化がない、または単純な）天気の場合
+                    # 分割不要な場合も、search_textを使って判定する
+                    icon_data, icon_color = get_weather_icon(search_text)
                     
                     visual_content = ft.Row([
                         ft.Icon(icon_data, size=40, color=icon_color),
@@ -220,7 +274,10 @@ def main(page: ft.Page):
                         ft.Text(f"日付: {date_str}", size=14, color=ft.Colors.GREY_600),
                         ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
                         # ここに作成したビジュアルコンテンツ（アイコン等）を配置
-                        visual_content,
+                        # Stackなど高さが可変なものが入るため、Containerで包むと安定します
+                        ft.Container(content=visual_content, height=65, alignment=ft.alignment.center_left),
+                        
+                        # テキストは補足として残す
                         ft.Text(weather, size=16, weight="w500", max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
                     ], spacing=5)
                 )
