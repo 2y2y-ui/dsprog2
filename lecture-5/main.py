@@ -7,7 +7,8 @@ def get_weather_icon(weather_text):
         return ft.Icons.WB_SUNNY, ft.Colors.ORANGE
     elif "雨" in weather_text:
         return ft.Icons.UMBRELLA, ft.Colors.BLUE
-    elif "曇" in weather_text:
+    # ひらがなの「くもり」も判定に追加
+    elif "曇" in weather_text or "くもり" in weather_text:
         return ft.Icons.CLOUD, ft.Colors.GREY
     elif "雪" in weather_text:
         return ft.Icons.AC_UNIT, ft.Colors.LIGHT_BLUE
@@ -158,8 +159,48 @@ def main(page: ft.Page):
                 # 日付の文字列を見やすく整形する (例: 2024-01-01T17:00:00+09:00 -> 2024-01-01)
                 date_str = time_defines[i][:10]
                 
-                # デザイン変更: アイコンを取得
-                icon_data, icon_color = get_weather_icon(weather)
+                # デザイン変更: 天気の変化（のち、から）を判定してビジュアルを変える
+                # 全角スペースなどを除去して判定しやすくする
+                weather_clean = weather.replace("　", " ")
+                
+                visual_content = None # ここに表示するアイコン等のパーツを入れる
+                
+                # 分割するためのキーワードを探す
+                split_keyword = None
+                if "のち" in weather_clean:
+                    split_keyword = "のち"
+                elif "から" in weather_clean:
+                    split_keyword = "から"
+                
+                if split_keyword:
+                    # キーワードで分割して、2つのアイコンと矢印を表示する
+                    # 「晴れ 昼過ぎ から くもり」のような場合、「から」で区切れば
+                    # 前半に「晴れ」、後半に「くもり」が含まれるため正しく判定できる
+                    parts = weather_clean.split(split_keyword, 1)
+                    before_txt = parts[0]
+                    after_txt = parts[1]
+                    
+                    icon1, col1 = get_weather_icon(before_txt)
+                    icon2, col2 = get_weather_icon(after_txt)
+                    
+                    # 変化を表すRowを作成 (アイコン -> 矢印 -> アイコン)
+                    visual_content = ft.Row(
+                        [
+                            ft.Icon(icon1, size=35, color=col1),
+                            ft.Icon(ft.Icons.ARROW_FORWARD, size=24, color=ft.Colors.GREY_400),
+                            ft.Icon(icon2, size=35, color=col2),
+                        ],
+                        alignment=ft.MainAxisAlignment.START,
+                    )
+                else:
+                    # 通常の（変化がない、または単純な）天気の場合
+                    # デザイン変更: アイコンを取得
+                    icon_data, icon_color = get_weather_icon(weather)
+                    
+                    visual_content = ft.Row([
+                        ft.Icon(icon_data, size=40, color=icon_color),
+                        ft.Text("天気", size=14, weight="bold", color=ft.Colors.GREY_800)
+                    ])
 
                 # 天気情報をカードに入れて表示リストに追加する
                 # デザイン変更: カードに影と角丸をつけてリッチにする
@@ -178,10 +219,8 @@ def main(page: ft.Page):
                     content=ft.Column([
                         ft.Text(f"日付: {date_str}", size=14, color=ft.Colors.GREY_600),
                         ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
-                        ft.Row([
-                            ft.Icon(icon_data, size=40, color=icon_color),
-                            ft.Text("天気", size=14, weight="bold", color=ft.Colors.GREY_800)
-                        ]),
+                        # ここに作成したビジュアルコンテンツ（アイコン等）を配置
+                        visual_content,
                         ft.Text(weather, size=16, weight="w500", max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
                     ], spacing=5)
                 )
