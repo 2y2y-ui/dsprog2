@@ -35,6 +35,23 @@ def main(page: ft.Page):
     page.padding = 0
     page.bgcolor = ft.Colors.GREY_100 # 背景を薄いグレーに
 
+    # --- 追加機能: ユーザーへの通知用メッセージバー ---
+    # 画面の下にポップアップメッセージを出すための部品（SnackBar）を用意する
+    # 中身のテキストは空にしておき、使うときに書き換える
+    snack_bar = ft.SnackBar(content=ft.Text(""))
+    # ページ全体の上乗せレイヤー（overlay）に追加して、どこからでも使えるようにする
+    page.overlay.append(snack_bar)
+
+    # メッセージを表示する処理を関数にしておく
+    # これを作ることで、好きなタイミングで「show_message("文字")」と呼べばメッセージが出るようになる
+    def show_message(text):
+        # 表示したい文章をセットする
+        snack_bar.content.value = text
+        # 表示スイッチをオンにする
+        snack_bar.open = True
+        # 画面を更新して表示を反映させる
+        page.update()
+
     # --- データ取得処理 ---
 
     # 気象庁の地域リスト（エリア定義）を取得するURL
@@ -131,8 +148,12 @@ def main(page: ft.Page):
                 # 状態を反転させる
                 if region_code in favorite_codes:
                     favorite_codes.remove(region_code)
+                    # 追加機能: 解除したことを画面下のメッセージでユーザーに伝える
+                    show_message("お気に入りから解除しました")
                 else:
                     favorite_codes.add(region_code)
+                    # 追加機能: 追加したことを画面下のメッセージでユーザーに伝える
+                    show_message("お気に入りに追加しました")
                 
                 # サイドバーを更新して、お気に入りリストに反映させる
                 render_sidebar()
@@ -351,7 +372,7 @@ def main(page: ft.Page):
             sidebar_controls.append(ft.Divider(color=ft.Colors.BLUE_GREY_700))
 
 
-        # --- 通常の地域リスト（前回と同じロジック） ---
+        # --- 通常の地域リスト ---
         # 地方（centers）ごとにループ処理を行う
         for center_code, center_info in centers.items():
             # その地方に含まれる都道府県（子供の要素）のコードリストを取得する
