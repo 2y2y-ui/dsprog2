@@ -69,7 +69,7 @@ def main(page: ft.Page):
     centers = area_data["centers"]
     offices = area_data["offices"]
 
-    # --- 追加機能: 取得した地域情報をデータベースに保存する ---
+    # --- 追加機能: 取得した地域情報をデータベースに保存する --- 
     # データベースに接続する
     conn = sqlite3.connect('weather.db')
     cursor = conn.cursor()
