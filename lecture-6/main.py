@@ -4,6 +4,195 @@ import requests
 import sqlite3
 import datetime
 
+
+# --- UIコンポーネント作成関数 ---
+# この関数は、天気予報の文字列(例:「晴れ、曇り」)を受け取り、それに対応するアイコンの組み合わせ(ft.Rowやft.Stack)を生成して返す役割を持つ。これにより、メインの表示ロジックがシンプルになる。
+def create_weather_visual(weather_text):
+    # 判定用に不要な文字（スペースなど）を削除してシンプルにする
+    search_text = weather_text.replace("　", "").replace(" ", "")
+    
+    # 時間による変化（「のち」「から」）があるか調べる
+    time_split_keyword = "のち" if "のち" in search_text else "から" if "から" in search_text else None
+    # 一時的な変化（「時々」「一時」）があるか調べる
+    occasional_split_keyword = "時々" if "時々" in search_text else "一時" if "一時" in search_text else None
+    
+    # アイコン作成ロジック
+    if time_split_keyword:
+        #  時間変化がある場合 (矢印スタイル)
+        parts = search_text.split(time_split_keyword, 1)
+        icon1, col1 = get_weather_icon(parts[0])
+        icon2, col2 = get_weather_icon(parts[1])
+        # 2つのアイコンを矢印でつないだRowコントロールを生成して返す
+        return ft.Row(
+            [
+                ft.Icon(icon1, size=35, color=col1),
+                ft.Icon(ft.Icons.ARROW_FORWARD, size=24, color=ft.Colors.GREY_400),
+                ft.Icon(icon2, size=35, color=col2),
+            ],
+            alignment=ft.MainAxisAlignment.START,
+        )
+    
+    elif occasional_split_keyword:
+        # 「時々」や「一時」の場合
+        parts = search_text.split(occasional_split_keyword, 1)
+        main_icon_data, main_col = get_weather_icon(parts[0])
+        sub_icon_data, sub_col = get_weather_icon(parts[1])
+        # 2つのアイコンを重ねて表示するStackコントロールを生成して返す
+        return ft.Stack(
+            controls=[
+                ft.Container(
+                    content=ft.Icon(main_icon_data, size=50, color=main_col),
+                    padding=ft.padding.only(right=15, bottom=15)
+                ),
+                ft.Container(
+                    content=ft.Icon(sub_icon_data, size=28, color=sub_col),
+                    bgcolor=ft.Colors.WHITE,
+                    border_radius=50,
+                    padding=2,
+                    alignment=ft.alignment.bottom_right,
+                    right=0,
+                    bottom=0
+                ),
+            ],
+            width=75,
+            height=65,
+        )
+
+    else:
+        #  通常の（変化がない、または単純な）天気の場合
+        icon_data, icon_color = get_weather_icon(search_text)
+        # 1つのアイコンとテキストを並べたRowコントロールを生成して返す
+        return ft.Row([
+            ft.Icon(icon_data, size=40, color=icon_color),
+            ft.Text("天気", size=14, weight="bold", color=ft.Colors.GREY_800)
+        ])
+
+# 1日分の天気予報カードを作成する関数
+# この関数は、日付や天気などの情報を受け取り、一つのカード型UIコンポーネント(ft.Container)を生成して返す。
+# これにより、表示ロジック内のforループがシンプルになる。
+def create_forecast_card(date_str, weather_text):
+    # 天気テキストから、表示するアイコン部分のUI（visual_content）を作成する
+    visual_content = create_weather_visual(weather_text)
+    
+    # カード全体のコンテナを作成して返す
+    return ft.Container(
+        width=250, # カードの幅を固定
+        height=180,
+        padding=20,
+        bgcolor=ft.Colors.WHITE,
+        border_radius=15,
+        shadow=ft.BoxShadow(
+            blur_radius=10,
+            spread_radius=1,
+            color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+            offset=ft.Offset(0, 4)
+        ),
+        content=ft.Column([
+            ft.Text(f"日付: {date_str}", size=14, color=ft.Colors.GREY_600),
+            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
+            # ここに作成したアイコン等を配置
+            # Stackなど高さが可変なものが入るため、Containerで包む
+            ft.Container(content=visual_content, height=65, alignment=ft.alignment.center_left),
+            
+            # テキストは補足として残す
+            ft.Text(weather_text, size=16, weight="w500", max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
+        ], spacing=5)
+    )
+
+# サイドバーの中身を構築する関数
+# この関数は、地域データやお気に入り情報を受け取り、サイドバーを構成するFletコントロールのリストを生成して返す。
+# これにより、render_sidebar関数がシンプルになる。
+def create_sidebar_controls(centers, offices, favorite_codes, on_tile_click):
+    sidebar_controls = []
+    
+    # デザイン変更: サイドバーのタイトルを追加
+    sidebar_controls.append(
+        ft.Container(
+            content=ft.Text("地域一覧", size=18, weight="bold", color=ft.Colors.WHITE),
+            padding=20,
+            bgcolor=ft.Colors.BLUE_800
+        )
+    )
+
+    # --- お気に入りセクションの表示 ---
+    if favorite_codes: # お気に入りが1つでもある場合のみ表示
+        fav_tiles = []
+        for code in favorite_codes:
+            # 地域コードから名前を取得する（offices辞書を使う）
+            if code in offices:
+                name = offices[code]["name"]
+                # お気に入り用のListTile作成
+                tile = ft.ListTile(
+                    leading=ft.Icon(ft.Icons.STAR, size=16, color=ft.Colors.AMBER), # 星アイコン
+                    title=ft.Text(name, color=ft.Colors.WHITE, size=14, weight="bold"),
+                    data=code,
+                    on_click=on_tile_click,
+                    hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
+                    bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.AMBER) # 少し背景色をつける
+                )
+                fav_tiles.append(tile)
+        
+        # お気に入りリストをまとめる
+        sidebar_controls.append(
+            ft.ExpansionTile(
+                leading=ft.Icon(ft.Icons.BOOKMARK, color=ft.Colors.AMBER),
+                title=ft.Text("お気に入り", weight="bold"),
+                controls=fav_tiles,
+                collapsed_text_color=ft.Colors.AMBER,
+                text_color=ft.Colors.AMBER,
+                icon_color=ft.Colors.AMBER,
+                collapsed_icon_color=ft.Colors.AMBER,
+                initially_expanded=True # 最初から開いておく
+            )
+        )
+        # 区切り線を入れる
+        sidebar_controls.append(ft.Divider(color=ft.Colors.BLUE_GREY_700))
+
+    # --- 通常の地域リスト ---
+    # 地方（centers）ごとにループ処理を行う
+    for center_code, center_info in centers.items():
+        # その地方に含まれる都道府県（子供の要素）のコードリストを取得する
+        child_codes = center_info["children"]
+        
+        # 都道府県ごとのListTileを入れるリストを作る
+        prefecture_tiles = []
+        
+        for child_code in child_codes:
+            # officesの中に詳細情報があればリストに追加する
+            if child_code in offices:
+                office_name = offices[child_code]["name"]
+                
+                # ListTileを作成する
+                # data属性にコードを持たせておき、クリック時に使えるようにする
+                # デザイン変更: アイコンを追加し、クリック時の色設定を追加
+                tile = ft.ListTile(
+                    leading=ft.Icon(ft.Icons.LOCATION_CITY, size=16, color=ft.Colors.BLUE_GREY_200),
+                    title=ft.Text(office_name, color=ft.Colors.BLUE_GREY_100, size=14),
+                    data=child_code,
+                    on_click=on_tile_click,
+                    hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE)
+                )
+                prefecture_tiles.append(tile)
+        
+        # ExpansionTile（開閉可能なリスト）を作成し、その中に都道府県リストを入れる
+        # 地方名（関東甲信地方など）をタイトルにする
+        # デザイン変更: 色とアイコンを調整して視認性を向上
+        expansion_tile = ft.ExpansionTile(
+            leading=ft.Icon(ft.Icons.MAP_OUTLINED, color=ft.Colors.WHITE),
+            title=ft.Text(center_info["name"], weight="bold"),
+            controls=prefecture_tiles,
+            collapsed_text_color=ft.Colors.WHITE,
+            text_color=ft.Colors.LIGHT_BLUE_200,
+            icon_color=ft.Colors.WHITE,
+            collapsed_icon_color=ft.Colors.WHITE,
+        )
+        sidebar_controls.append(expansion_tile)
+    
+    # 組み立てたUIコントロールのリストを返す
+    return sidebar_controls
+
+# ---  ここまでが新しいコード  ---
+
 # 天気の文字からアイコンを判定する補助関数（これはデザイン用の追加機能です）
 # 修正: 判定ロジックを強化し、誤判定を防ぐ
 def get_weather_icon(weather_text):
@@ -69,7 +258,7 @@ def main(page: ft.Page):
     centers = area_data["centers"]
     offices = area_data["offices"]
 
-    # --- 追加機能: 取得した地域情報をデータベースに保存する --- 
+    # --- 取得した地域情報をデータベースに保存する ---
     # データベースに接続する
     conn = sqlite3.connect('weather.db')
     cursor = conn.cursor()
@@ -89,8 +278,20 @@ def main(page: ft.Page):
     # お気に入りに登録された地域コードを保存するセット（重複しないリストのようなもの）
     favorite_codes = set()
 
+    # --- 追加機能: 過去の予報閲覧機能のためのグローバル変数 ---
+    # 現在選択されている地域のコードを保持するための変数。
+    current_selected_code = None
+
     # --- UIパーツの定義 ---
 
+    # --- 日付選択用のドロップダウンメニュー ---
+    date_dropdown = ft.Dropdown(
+        label="過去の取得日時を選択",
+        options=[],
+        visible=False,
+        width=300,
+    )
+    
     # 天気予報を表示するエリア（右側のメイン画面）
     # 初期状態では「地域を選択してください」と表示しておく
     # デザイン変更: グリッド風に見せるためのコンテナ調整
@@ -118,14 +319,115 @@ def main(page: ft.Page):
     # --- サイドバー更新用の関数定義 ---
     # お気に入りが変更されるたびにサイドバーを作り直す必要があるため、関数化します
     sidebar_column = ft.Column(scroll=ft.ScrollMode.AUTO, spacing=0)
+    
+    # --- 追加機能: 過去の予報を表示するための新しい関数 ---
+    def display_forecast_from_db(region_code, fetched_at):
+        # UIの部品にアクセスするため、親関数からいくつかの変数を参照する
+        nonlocal weather_column, offices, favorite_codes
+        
+        # 地域名を取得する
+        region_name = offices[region_code]["name"]
+        
+        # 画面の表示を一度クリアする
+        weather_column.controls.clear()
+        
+        try:
+            # データベースに接続する
+            conn = sqlite3.connect('weather.db')
+            cursor = conn.cursor()
+            
+            # 指定された地域コードと取得日時(fetched_at)に合致する予報データをDBから取得する
+            cursor.execute("""
+                SELECT target_date, weather_text 
+                FROM forecasts 
+                WHERE area_code = ? AND fetched_at = ?
+            """, (region_code, fetched_at))
+            
+            # 検索結果をすべて取得する
+            db_results = cursor.fetchall()
+            conn.close()
+            
+            # データベースにデータがなかった場合の処理
+            if not db_results:
+                weather_column.controls.append(ft.Text("指定された日時の予報データが見つかりませんでした。"))
+                page.update()
+                return
+
+            # --- ここから下のUI構築ロジックは、show_forecast関数とほぼ同じ ---
+            # (ただし、APIアクセスやDB保存は行わず、DBから取得したデータを表示するだけ)
+
+            is_favorite = region_code in favorite_codes
+            fav_icon = ft.Icons.STAR if is_favorite else ft.Icons.STAR_BORDER
+            fav_color = ft.Colors.AMBER if is_favorite else ft.Colors.GREY
+
+            def toggle_favorite(e):
+                if region_code in favorite_codes:
+                    favorite_codes.remove(region_code)
+                    show_message("お気に入りから解除しました")
+                else:
+                    favorite_codes.add(region_code)
+                    show_message("お気に入りに追加しました")
+                render_sidebar()
+                # 状態を更新するために、最新の予報を再表示する
+                show_forecast(e)
+
+            header = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.LOCATION_ON, color=ft.Colors.RED_400, size=30),
+                    ft.Text(f"{region_name}の天気予報", size=28, weight="bold", color=ft.Colors.BLUE_GREY_900, expand=True),
+                    ft.IconButton(
+                        icon=fav_icon, icon_color=fav_color, icon_size=30,
+                        tooltip="お気に入りに追加/解除", on_click=toggle_favorite, data=region_code
+                    )
+                ]),
+                padding=ft.padding.only(bottom=20)
+            )
+            
+            # 日付ドロップダウンをヘッダーに追加
+            weather_column.controls.extend([header, date_dropdown])
+
+            cards_row = ft.Row(wrap=True, spacing=20, run_spacing=20)
+            
+            # forループの中が、カード作成関数を呼び出すだけになり、非常にシンプルになる。
+            for row in db_results:
+                full_date_str, weather = row[0], row[1]
+                date_str = full_date_str[:10]
+                # 新しい関数を呼び出してカードを作成する
+                card = create_forecast_card(date_str, weather)
+                cards_row.controls.append(card)
+            
+            weather_column.controls.append(cards_row)
+
+        except Exception as err:
+            weather_column.controls.append(ft.Container(content=ft.Text(f"エラーが発生しました: {err}", color=ft.Colors.WHITE), bgcolor=ft.Colors.RED_400, padding=10, border_radius=5))
+        
+        page.update()
+
+    # --- 追加機能: ドロップダウンが変更されたときに呼ばれる関数 ---
+    def on_date_dropdown_change(e):
+        # ドロップダウンで選択された値(e.control.value)は、取得日時(fetched_at)の文字列。
+        selected_fetched_at = e.control.value
+        # 現在選択中の地域コード(current_selected_code)と、選択された取得日時を元に、
+        # 過去の予報表示関数を呼び出す。
+        if current_selected_code and selected_fetched_at:
+            display_forecast_from_db(current_selected_code, selected_fetched_at)
+
+    # ドロップダウンのon_changeイベントに、作成した関数を割り当てる。
+    date_dropdown.on_change = on_date_dropdown_change
 
     # 天気情報を取得・表示する関数（ListTileをクリックしたときに動く）
-    # ※関数内で関数を使うため、先に定義します
+    # 関数内で関数を使うため、先に定義。
     def show_forecast(e):
-        # クリックされたListTileまたはボタンから地域コードと地域名を取り出す
-        # data属性に格納しておいた値を使います
-        region_code = e.control.data
+        # グローバル変数を更新することを示す
+        nonlocal current_selected_code
         
+        # クリックされたListTileまたはボタンから地域コードと地域名を取り出す
+        # data属性に格納しておいた値を使う
+        region_code = e.control.data
+
+        # 現在選択中の地域コードをグローバル変数に保存する
+        current_selected_code = region_code
+
         # 地域名を取得する（お気に入りボタンからの場合とリストからの場合で取り方が違うため工夫）
         if isinstance(e.control, ft.ListTile):
             region_name = e.control.title.value
@@ -175,7 +477,31 @@ def main(page: ft.Page):
             
             # 保存を確定する
             conn.commit()
+        
+            # --- 追加機能: 過去の取得日時をDBから取得し、ドロップダウンを更新 ---
+            # これから表示する地域(region_code)について、過去にDBに保存された
+            # 全ての取得日時(fetched_at)を重複なく(DISTINCT)、新しい順(DESC)に取得する。
+            cursor.execute("""
+                SELECT DISTINCT fetched_at 
+                FROM forecasts 
+                WHERE area_code = ? 
+                ORDER BY fetched_at DESC
+            """, (region_code,))
+            
+            # 取得した日時データをリストに格納する。
+            past_dates = [row[0] for row in cursor.fetchall()]
 
+            # ドロップダウンの選択肢をクリアし、新しく取得した日時のリストで更新する。
+            date_dropdown.options.clear()
+            for past_date in past_dates:
+                # ft.dropdown.Optionのtextとkeyの両方に日時文字列を設定する。
+                date_dropdown.options.append(ft.dropdown.Option(key=past_date, text=past_date))
+
+            # ドロップダウンの値を、今回取得した最新の日時(current_time)に設定する。
+            date_dropdown.value = current_time
+            # ドロップダウンを画面に表示する(visible=True)。
+            date_dropdown.visible = True
+            
             # 画面表示用にデータベースからデータを読み込む
             # 今回保存したばかりのデータ（fetched_atがcurrent_timeと同じもの）を取得する
             # ※これが「データベースに保存したものを表示する」という要件になる
@@ -237,7 +563,8 @@ def main(page: ft.Page):
                 ]),
                 padding=ft.padding.only(bottom=20)
             )
-            weather_column.controls.append(header)
+            #  日付ドロップダウンをヘッダーの下に追加 
+            weather_column.controls.extend([header, date_dropdown])
 
             # 天気予報の数だけループして表示を作る
             # デザイン変更: Rowを使ってカードを横並び（レスポンシブ）っぽく配置するコンテナを用意
@@ -256,126 +583,17 @@ def main(page: ft.Page):
                 # 日付の文字列を見やすく整形する (例: 2024-01-01T17:00:00+09:00 -> 2024-01-01)
                 date_str = full_date_str[:10]
                 
-                # デザイン変更: 天気の変化（のち、から）を判定してビジュアルを変える
-                # 全角スペースなどを除去して、判定用の文字列を作成する
-                # これにより「晴れ　のち　くもり」のようなスペース入りテキストも正しく処理できる
-                search_text = weather.replace("　", "").replace(" ", "")
-                
-                visual_content = None # ここに表示するアイコン等のパーツを入れる
-                
-                # --- ロジック分岐の準備 ---
-                
-                #  時間による変化（「のち」「から」）
-                time_split_keyword = None
-                if "のち" in search_text:
-                    time_split_keyword = "のち"
-                elif "から" in search_text:
-                    time_split_keyword = "から"
-                
-                #  一時的な変化（「時々」「一時」）
-                occasional_split_keyword = None
-                if "時々" in search_text:
-                    occasional_split_keyword = "時々"
-                elif "一時" in search_text:
-                    occasional_split_keyword = "一時"
-
-                # --- アイコン作成ロジック ---
-
-                if time_split_keyword:
-                    #  時間変化がある場合 (矢印スタイル)
-                    # search_textを使って分割することで、正確に前後の天気を取得する
-                    parts = search_text.split(time_split_keyword, 1)
-                    before_txt = parts[0]
-                    after_txt = parts[1]
-                    
-                    icon1, col1 = get_weather_icon(before_txt)
-                    icon2, col2 = get_weather_icon(after_txt)
-                    
-                    visual_content = ft.Row(
-                        [
-                            ft.Icon(icon1, size=35, color=col1),
-                            ft.Icon(ft.Icons.ARROW_FORWARD, size=24, color=ft.Colors.GREY_400),
-                            ft.Icon(icon2, size=35, color=col2),
-                        ],
-                        alignment=ft.MainAxisAlignment.START,
-                    )
-                
-                elif occasional_split_keyword:
-                    # 「時々」や「一時」の場合 (スタックスタイル)
-                    # テキストを分割してからアイコンを判定する
-                    # これにより「くもり」がメインの場合に「晴れ」アイコンが出るのを防ぐ
-                    parts = search_text.split(occasional_split_keyword, 1)
-                    main_txt = parts[0] # メインの天気
-                    sub_txt = parts[1]  # サブの天気
-                    
-                    main_icon_data, main_col = get_weather_icon(main_txt)
-                    sub_icon_data, sub_col = get_weather_icon(sub_txt)
-                    
-                    # ft.Stackを使ってアイコンを重ねます
-                    visual_content = ft.Stack(
-                        controls=[
-                            # 下のレイヤー: メインの天気（大きく表示）
-                            ft.Container(
-                                content=ft.Icon(main_icon_data, size=50, color=main_col),
-                                padding=ft.padding.only(right=15, bottom=15) # 重なり調整
-                            ),
-                            # 上のレイヤー: サブの天気（右下に小さく表示）
-                            ft.Container(
-                                content=ft.Icon(sub_icon_data, size=28, color=sub_col),
-                                bgcolor=ft.Colors.WHITE, # 重なった時に見やすいよう背景を白く抜く
-                                border_radius=50, # 丸くする
-                                padding=2,
-                                alignment=ft.alignment.bottom_right, # 右下に配置
-                                right=0,
-                                bottom=0
-                            ),
-                        ],
-                        width=75, # Stack全体のサイズ確保
-                        height=65,
-                    )
-
-                else:
-                    #  通常の（変化がない、または単純な）天気の場合
-                    # 分割不要な場合も、search_textを使って判定する
-                    icon_data, icon_color = get_weather_icon(search_text)
-                    
-                    visual_content = ft.Row([
-                        ft.Icon(icon_data, size=40, color=icon_color),
-                        ft.Text("天気", size=14, weight="bold", color=ft.Colors.GREY_800)
-                    ])
-
-                # 天気情報をカードに入れて表示リストに追加する
-                # デザイン変更: カードに影と角丸をつけてリッチにする
-                card_content = ft.Container(
-                    width=250, # カードの幅を固定
-                    height=180,
-                    padding=20,
-                    bgcolor=ft.Colors.WHITE,
-                    border_radius=15,
-                    shadow=ft.BoxShadow(
-                        blur_radius=10,
-                        spread_radius=1,
-                        color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
-                        offset=ft.Offset(0, 4)
-                    ),
-                    content=ft.Column([
-                        ft.Text(f"日付: {date_str}", size=14, color=ft.Colors.GREY_600),
-                        ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
-                        # ここに作成したアイコン等を配置
-                        # Stackなど高さが可変なものが入るため、Containerで包む
-                        ft.Container(content=visual_content, height=65, alignment=ft.alignment.center_left),
-                        
-                        # テキストは補足として残す
-                        ft.Text(weather, size=16, weight="w500", max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
-                    ], spacing=5)
-                )
-                
-                cards_row.controls.append(card_content)
+                # 長いif-elif-elseブロックの代わりに、新しい関数を呼び出すだけにする。
+                card = create_forecast_card(date_str, weather)
+                cards_row.controls.append(card)
             
             weather_column.controls.append(cards_row)
 
         except Exception as err:
             # エラーが起きた場合は画面に表示する
+            weather_column.controls.clear()
+            # エラー発生時はドロップダウンを隠す
+            date_dropdown.visible = False
             weather_column.controls.append(
                 ft.Container(
                     content=ft.Text(f"エラーが発生しました: {err}", color=ft.Colors.WHITE),
@@ -393,94 +611,10 @@ def main(page: ft.Page):
         # 一度中身を空にする
         sidebar_column.controls.clear()
         
-        sidebar_controls = []
-        
-        # デザイン変更: サイドバーのタイトルを追加
-        sidebar_controls.append(
-            ft.Container(
-                content=ft.Text("地域一覧", size=18, weight="bold", color=ft.Colors.WHITE),
-                padding=20,
-                bgcolor=ft.Colors.BLUE_800
-            )
-        )
-
-        # --- お気に入りセクションの表示 ---
-        if favorite_codes: # お気に入りが1つでもある場合のみ表示
-            fav_tiles = []
-            for code in favorite_codes:
-                # 地域コードから名前を取得する（offices辞書を使う）
-                if code in offices:
-                    name = offices[code]["name"]
-                    # お気に入り用のListTile作成
-                    tile = ft.ListTile(
-                        leading=ft.Icon(ft.Icons.STAR, size=16, color=ft.Colors.AMBER), # 星アイコン
-                        title=ft.Text(name, color=ft.Colors.WHITE, size=14, weight="bold"),
-                        data=code,
-                        on_click=show_forecast,
-                        hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
-                        bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.AMBER) # 少し背景色をつける
-                    )
-                    fav_tiles.append(tile)
-            
-            # お気に入りリストをまとめる
-            sidebar_controls.append(
-                ft.ExpansionTile(
-                    leading=ft.Icon(ft.Icons.BOOKMARK, color=ft.Colors.AMBER),
-                    title=ft.Text("お気に入り", weight="bold"),
-                    controls=fav_tiles,
-                    collapsed_text_color=ft.Colors.AMBER,
-                    text_color=ft.Colors.AMBER,
-                    icon_color=ft.Colors.AMBER,
-                    collapsed_icon_color=ft.Colors.AMBER,
-                    initially_expanded=True # 最初から開いておく
-                )
-            )
-            # 区切り線を入れる
-            sidebar_controls.append(ft.Divider(color=ft.Colors.BLUE_GREY_700))
-
-
-        # --- 通常の地域リスト ---
-        # 地方（centers）ごとにループ処理を行う
-        for center_code, center_info in centers.items():
-            # その地方に含まれる都道府県（子供の要素）のコードリストを取得する
-            child_codes = center_info["children"]
-            
-            # 都道府県ごとのListTileを入れるリストを作る
-            prefecture_tiles = []
-            
-            for child_code in child_codes:
-                # officesの中に詳細情報があればリストに追加する
-                if child_code in offices:
-                    office_name = offices[child_code]["name"]
-                    
-                    # ListTileを作成する
-                    # data属性にコードを持たせておき、クリック時に使えるようにする
-                    # デザイン変更: アイコンを追加し、クリック時の色設定を追加
-                    tile = ft.ListTile(
-                        leading=ft.Icon(ft.Icons.LOCATION_CITY, size=16, color=ft.Colors.BLUE_GREY_200),
-                        title=ft.Text(office_name, color=ft.Colors.BLUE_GREY_100, size=14),
-                        data=child_code,
-                        on_click=show_forecast,
-                        hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE)
-                    )
-                    prefecture_tiles.append(tile)
-            
-            # ExpansionTile（開閉可能なリスト）を作成し、その中に都道府県リストを入れる
-            # 地方名（関東甲信地方など）をタイトルにする
-            # デザイン変更: 色とアイコンを調整して視認性を向上
-            expansion_tile = ft.ExpansionTile(
-                leading=ft.Icon(ft.Icons.MAP_OUTLINED, color=ft.Colors.WHITE),
-                title=ft.Text(center_info["name"], weight="bold"),
-                controls=prefecture_tiles,
-                collapsed_text_color=ft.Colors.WHITE,
-                text_color=ft.Colors.LIGHT_BLUE_200,
-                icon_color=ft.Colors.WHITE,
-                collapsed_icon_color=ft.Colors.WHITE,
-            )
-            sidebar_controls.append(expansion_tile)
-
-        # 作成したリストをサイドバーカラムに追加
-        sidebar_column.controls.extend(sidebar_controls)
+        # 長いUI構築ロジックの代わりに、新しい関数を呼び出すだけにする。
+        # show_forecast関数を渡すことで、クリックイベントを正しく設定できる。
+        controls = create_sidebar_controls(centers, offices, favorite_codes, show_forecast)
+        sidebar_column.controls.extend(controls)
         # サイドバー部分を更新
         sidebar_column.update()
 
